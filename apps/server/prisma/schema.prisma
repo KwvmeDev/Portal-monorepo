@@ -1,0 +1,361 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  member
+  moderator
+  org_admin
+  super_admin
+}
+
+enum OrgType {
+  panafrican
+  fraternity
+  sorority
+  general
+}
+
+enum OrgVisibility {
+  open
+  invite_only
+}
+
+enum MembershipStatus {
+  pending
+  approved
+  rejected
+  banned
+}
+
+enum MembershipRole {
+  member
+  moderator
+  admin
+}
+
+enum ContentType {
+  text
+  rich_text
+  image
+  poll
+  link
+  repost
+}
+
+enum VoteTargetType {
+  post
+  comment
+}
+
+enum VoteValue {
+  up
+  down
+}
+
+enum NotificationType {
+  follow
+  upvote_post
+  upvote_comment
+  comment
+  reply
+  repost
+  quote
+  mention
+  join_request
+  join_approved
+  join_rejected
+  dm
+}
+
+enum ReportReason {
+  spam
+  hate_speech
+  harassment
+  misinformation
+  nsfw
+  other
+  auto_moderation
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  actioned
+  dismissed
+  auto_flagged
+}
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  password     String
+  username     String  @unique
+  displayName  String  @map("display_name")
+  avatarUrl    String? @map("avatar_url")
+  bio          String?
+  universityId String? @map("university_id")
+  role         UserRole @default(member)
+  isBanned          Boolean  @default(false) @map("is_banned")
+  banReason         String?  @map("ban_reason")
+  isEmailVerified   Boolean  @default(false) @map("is_email_verified")
+  expoPushTokens ExpoPushToken[]
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  university         University?    @relation(fields: [universityId], references: [id])
+  posts              Post[]         @relation("AuthorPosts")
+  votes              Vote[]
+  comments           Comment[]
+  orgMemberships     OrgMembership[]
+  followers          Follow[]       @relation("Following")
+  following          Follow[]       @relation("Follower")
+  notifications      Notification[] @relation("RecipientNotifications")
+  actorNotifications Notification[] @relation("ActorNotifications")
+  reports            Report[]       @relation("ReporterReports")
+  reviewedReports    Report[]       @relation("ReviewerReports")
+  conversations1     Conversation[] @relation("Participant1")
+  conversations2     Conversation[] @relation("Participant2")
+  messages           Message[]
+  createdOrgs        Organization[] @relation("OrgCreator")
+  removedPosts       Post[]         @relation("RemovedByUser")
+
+  @@map("users")
+}
+
+model University {
+  id      String  @id @default(uuid())
+  name    String
+  domain  String?
+  country String
+  city    String
+
+  users         User[]
+  organizations Organization[]
+
+  @@map("universities")
+}
+
+model Organization {
+  id           String        @id @default(uuid())
+  name         String
+  handle       String        @unique
+  description  String?
+  avatarUrl    String?       @map("avatar_url")
+  bannerUrl    String?       @map("banner_url")
+  type         OrgType
+  visibility   OrgVisibility
+  universityId String?       @map("university_id")
+  parentOrgId  String?       @map("parent_org_id")
+  createdBy    String        @map("created_by")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  university  University?     @relation(fields: [universityId], references: [id])
+  parent      Organization?   @relation("OrgHierarchy", fields: [parentOrgId], references: [id])
+  chapters    Organization[]  @relation("OrgHierarchy")
+  creator     User            @relation("OrgCreator", fields: [createdBy], references: [id])
+  memberships OrgMembership[]
+  posts       Post[]
+
+  @@map("organizations")
+}
+
+model OrgMembership {
+  id       String           @id @default(uuid())
+  userId   String           @map("user_id")
+  orgId    String           @map("org_id")
+  role     MembershipRole   @default(member)
+  status   MembershipStatus @default(pending)
+  joinedAt DateTime         @default(now()) @map("joined_at")
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("org_memberships")
+}
+
+model Post {
+  id           String      @id @default(uuid())
+  authorId     String      @map("author_id")
+  content      String?
+  contentType  ContentType @map("content_type")
+  mediaUrls    Json        @default("[]") @map("media_urls")
+  linkUrl      String?     @map("link_url")
+  linkPreview  Json?       @map("link_preview")
+  pollId       String?     @map("poll_id")
+  orgId        String?     @map("org_id")
+  universityId String?     @map("university_id")
+  repostOfId   String?     @map("repost_of_id")
+  quoteOfId    String?     @map("quote_of_id")
+  quoteContent String?     @map("quote_content")
+  upvotes      Int         @default(0)
+  downvotes    Int         @default(0)
+  commentCount Int         @default(0) @map("comment_count")
+  repostCount  Int         @default(0) @map("repost_count")
+  isPinned     Boolean     @default(false) @map("is_pinned")
+  isRemoved    Boolean     @default(false) @map("is_removed")
+  removedById  String?     @map("removed_by")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  author    User          @relation("AuthorPosts", fields: [authorId], references: [id])
+  org       Organization? @relation(fields: [orgId], references: [id])
+  repostOf  Post?         @relation("PostReposts", fields: [repostOfId], references: [id])
+  reposts   Post[]        @relation("PostReposts")
+  quoteOf   Post?         @relation("PostQuotes", fields: [quoteOfId], references: [id])
+  quotes    Post[]        @relation("PostQuotes")
+  removedBy User?         @relation("RemovedByUser", fields: [removedById], references: [id])
+  poll      Poll?         @relation(fields: [pollId], references: [id])
+  comments  Comment[]
+
+  @@map("posts")
+}
+
+model Vote {
+  id         String         @id @default(uuid())
+  userId     String         @map("user_id")
+  targetId   String         @map("target_id")
+  targetType VoteTargetType @map("target_type")
+  value      VoteValue
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetId, targetType])
+  @@map("votes")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  authorId  String   @map("author_id")
+  parentId  String?  @map("parent_id")
+  content   String
+  upvotes   Int      @default(0)
+  downvotes Int      @default(0)
+  isRemoved Boolean  @default(false) @map("is_removed")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post    Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author  User      @relation(fields: [authorId], references: [id])
+  parent  Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Poll {
+  id       String   @id @default(uuid())
+  question String
+  options  Json
+  endsAt   DateTime @map("ends_at")
+
+  posts     Post[]
+  pollVotes PollVote[]
+
+  @@map("polls")
+}
+
+model PollVote {
+  id       String @id @default(uuid())
+  pollId   String @map("poll_id")
+  userId   String @map("user_id")
+  optionId String @map("option_id")
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@map("poll_votes")
+}
+
+model Follow {
+  followerId  String   @map("follower_id")
+  followingId String   @map("following_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}
+
+model Conversation {
+  id             String   @id @default(uuid())
+  participant1Id String   @map("participant_1_id")
+  participant2Id String   @map("participant_2_id")
+  lastMessageAt  DateTime @default(now()) @map("last_message_at")
+
+  participant1 User      @relation("Participant1", fields: [participant1Id], references: [id])
+  participant2 User      @relation("Participant2", fields: [participant2Id], references: [id])
+  messages     Message[]
+
+  @@unique([participant1Id, participant2Id])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  senderId       String   @map("sender_id")
+  content        String
+  isRead         Boolean  @default(false) @map("is_read")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  actorId     String           @map("actor_id")
+  type        NotificationType
+  targetId    String           @map("target_id")
+  targetType  String           @map("target_type")
+  isRead      Boolean          @default(false) @map("is_read")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  recipient User @relation("RecipientNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User @relation("ActorNotifications", fields: [actorId], references: [id])
+
+  @@map("notifications")
+}
+
+model Report {
+  id         String       @id @default(uuid())
+  reporterId String       @map("reporter_id")
+  targetId   String       @map("target_id")
+  targetType String       @map("target_type")
+  reason     ReportReason
+  details    String?
+  status     ReportStatus @default(pending)
+  reviewedBy String?      @map("reviewed_by")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  reporter User  @relation("ReporterReports", fields: [reporterId], references: [id])
+  reviewer User? @relation("ReviewerReports", fields: [reviewedBy], references: [id])
+
+  @@map("reports")
+}
+
+model ExpoPushToken {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  token      String
+  deviceType String   @map("device_type")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@map("expo_push_tokens")
+}
